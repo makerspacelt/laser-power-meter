@@ -1,0 +1,7 @@
+{
+    "baudrate": "460800",
+    "port": "/dev/ttyUSB0",
+    "minify": false,
+    "compile": false,
+    "keeppath": false
+}

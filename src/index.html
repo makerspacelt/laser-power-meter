@@ -1,0 +1,187 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+    #topbar {
+      margin: 0.5rem;
+    }
+    #btn-stop {
+      float: left;
+      font-size: larger;
+    }
+    #topbar span, #topbar label {
+      margin-left: 1rem;
+    }
+    #tchart-container {
+      position: relative;
+      margin: 1rem auto;
+      width: 95%;
+      height: 60%;
+    }
+  </style>
+</head>
+<body>
+<div id="topbar">
+    <button id="btn-stop">Stop</button>
+    <div>
+      <label>Weight: <input id="in-mass" value="0.1255" size=6> kg</label>
+      <label>Heat Capacity: <input id="in-heat-capacity" value="880" size=4> J/(kg K)</label>
+    </div>
+    <div>
+      <span>MIN: <span id="temp_min">0 C</span></span>
+      <span>MAX: <span id="temp_max">0 C</span></span>
+      <span>LAST: <span id="temp_last">0 C</span></span>
+      <span>POWER: <span id="power">0 W</span></span>
+    </div>
+</div>
+<div id="tchart-container">
+  <canvas id="tchart"></canvas>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.3/dist/Chart.min.js"></script>
+<script>
+var mass = 0.1255 // kg
+var heat_capacity = 880 // J/(kg K)
+
+var last_temp = 0
+var min_temp = 999
+var max_temp = 0
+var timestamp_first = 0
+var timestamp_min = 0
+var timestamp_max = 0
+var stopped = false
+
+var chartConfig = {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Temperature',
+      data: [],
+      steppedLine: 'after',
+      borderColor: 'rgb(255, 99, 132)',
+      fill: false,
+    }],
+  },
+  options: {
+    animation: { duration: 0, },
+    hover: { animationDuration: 0, },
+    legend: { display: false, },
+    tooltips: { intersect: false, },
+    responsive: true,
+    responsiveAnimationDuration: 0,
+    maintainAspectRatio: false,
+  },
+}
+var ctx = document.getElementById('tchart').getContext('2d')
+var tchart = new Chart(ctx, chartConfig)
+
+document.getElementById('btn-stop').onclick = function() {
+  stopped = true
+}
+
+document.getElementById('in-mass').onchange = function(e) {
+  var val = parseFloat(e.target.value)
+  if (val) {
+    mass = val
+    calculatePower()
+  }
+}
+
+document.getElementById('in-heat-capacity').onchange = function(e) {
+  var val = parseInt(e.target.value)
+  if (val) {
+    heat_capacity = val
+    calculatePower()
+  }
+}
+
+
+function calculatePower() {
+  if (timestamp_min && timestamp_max && timestamp_max - timestamp_min > 0) {
+    // console.log({mass, heat_capacity, max_temp, min_temp, timestamp_max, timestamp_min, tdiff: timestamp_max - timestamp_min})
+    var energy = mass * heat_capacity * (max_temp - min_temp)
+    var power = energy / (timestamp_max / 1000 - timestamp_min / 1000)
+    document.getElementById('power').textContent = power.toFixed(2) + ' W'
+  }
+}
+
+function getTemperature() {
+  if (stopped) {
+    return
+  }
+  var success = false
+  var xhr = new XMLHttpRequest()
+
+  window.setTimeout(function() {
+    if (!success) {
+      xhr.abort()
+      getTemperature()
+    }
+  }, 2000)
+
+  xhr.open('GET', '/t', true)
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState !== 4) {
+      return
+    }
+    if (xhr.status != 200) {
+      console.error("Error: status is not OK:", xhr.status, xhr.responseText)
+      return
+    }
+    
+    var now = new Date().valueOf()
+    if (!timestamp_first) {
+      timestamp_first = now
+    }
+    var temperature = parseFloat(xhr.responseText)
+    if (!temperature) {
+      console.error("Error: received invalid temperature", xhr.responseText)
+      return
+    }
+    if (isNaN(min_temp) || temperature <= min_temp) {
+      min_temp = temperature
+      timestamp_min = now
+    }
+    if (isNaN(max_temp) || temperature > max_temp) {
+      max_temp = temperature
+      timestamp_max = now
+    }
+    document.getElementById('temp_min').textContent = min_temp + ' C'
+    document.getElementById('temp_max').textContent = max_temp + ' C'
+    document.getElementById('temp_last').textContent = temperature + ' C'
+
+    calculatePower()
+
+    var label = Math.round((now - timestamp_first) / 100) / 10
+
+    // console.log(label, temperature)
+
+    chartConfig.data.labels.push(label)
+    chartConfig.data.datasets[0].data.push(temperature)
+    tchart.update()
+
+    success = true
+    getTemperature()
+  }
+  xhr.send()
+}
+
+if (location.protocol == 'file:') {
+    // for local development
+    chartConfig.data.labels = [0, 1, 2, 3, 4, 5]
+    chartConfig.data.datasets[0].data = [25.5, 25.6, 25.7, 25.8, 26, 29]
+    tchart.update()
+}
+else {
+    getTemperature()
+}
+
+</script>
+</body>
+</html>
